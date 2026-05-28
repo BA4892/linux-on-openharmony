@@ -1,148 +1,68 @@
 # Linux on OpenHarmony
 
-在 OpenHarmony 设备上一键运行完整的 Linux（Alpine Linux），通过 chroot 实现，零虚拟化开销。
+Run a full-featured Linux distribution (Alpine Linux) on OpenHarmony devices with a single click, implemented via chroot with zero virtualization overhead.
 
-## 特性
+## Features
 
-- 一键部署：Windows PowerShell 脚本，自动完成全部安装配置
-- XFCE4 桌面 + Firefox 浏览器，通过 VNC 远程访问
-- SSH 远程登录（dropbear，适配 chroot 环境）
-- Alpine 仓库 25000+ 软件包可用
-- 与 OH 共享内核，原生性能，零虚拟化开销
+- One-click deployment: Windows PowerShell script that automatically completes all installation and configuration
+- XFCE4 desktop + Firefox browser, accessible via VNC
+- SSH remote login (dropbear, adapted for the chroot environment)
+- Over 25,000 packages available from the Alpine repository
+- Shares the kernel with OH, delivering native performance with zero virtualization overhead
 
-## 快速开始
+## Quick Start
 
-### 环境要求
+### System Requirements
 
-- OpenHarmony 设备（aarch64，root 权限）
-- PC 端安装 `hdc` 工具，USB 连接设备，`hdc list targets` 能看到设备
-- 设备 WiFi 已连接，能上网（安装软件包时需要从 Alpine 仓库下载）
-- 设备系统时间正确（时间偏差会导致 SSL 证书验证失败，`apk` 和 `curl` 报错）
-- 如需翻墙，手机热点 + Clash 代理先配好（详见[安装配置细节](OpenHarmony安装linux细节.md)）
-- [alpine-minirootfs-3.21.3-aarch64.tar.gz](https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz) 放在项目目录下
+- OpenHarmony device (aarch64, root access)
+- Install the `hdc` tool on your PC, connect the device via USB, and verify the device appears in the `hdc list targets` output
+- The device must be connected to Wi-Fi and have internet access (required for downloading packages from the Alpine repository)
+- The device’s system time must be correct (time discrepancies will cause SSL certificate validation to fail, resulting in errors with `apk` and `curl`)
+- If you need to bypass internet restrictions, set up a mobile hotspot and Clash proxy in advance (see [Installation and Configuration Details](OpenHarmony-Install-Linux-Details.md))
+- Place [alpine-minirootfs-3.21.3-aarch64.tar.gz](https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz) in the project directory
 
-### 一键部署（Windows PowerShell）
+### One-Click Deployment (Windows PowerShell)
 
 ```powershell
 .\deploy.ps1
 
-# 如果提示"系统禁止运行脚本"，用以下方式绕过：
+# If you see a “Scripts are blocked” prompt, bypass it using the following:
 powershell -ExecutionPolicy Bypass -File .\deploy.ps1
 ```
 
-自动完成：推送文件 -> 安装 Alpine -> 安装 SSH + VNC + XFCE4 桌面 + Firefox + 中文字体。
+Automated workflow: Push files -> Install Alpine -> Install SSH + VNC + XFCE4 desktop + Firefox + Chinese fonts.
 
-### 部署后设置
+### Post-Deployment Configuration
 
 ```bash
-# PC 端执行，通过 hdc 进入设备
+# Execute on the PC to access the device via hdc
 hdc shell
 sh /data/local/tmp/alpine-enter.sh
 
-# 设置 root 密码（首次必须）
+# Set the root password (required on first run)
 passwd root
 
-# 启动所有服务（SSH + VNC 桌面）
+# Start all services (SSH + VNC desktop)
 sh /root/start-services.sh 1920x1080
 ```
 
-### 连接
+### Connecting
 
-**SSH（通过 USB 端口转发，不依赖网络）：**
+**SSH (via USB port forwarding, no network required):**
 
 ```powershell
-# PC 端执行（不是在 hdc shell 里）
+# Execute on PC (not within the hdc shell)
 hdc fport tcp:2222 tcp:22
 ssh root@127.0.0.1 -p 2222
 ```
 
-**VNC 桌面：**
+**VNC Desktop:**
 
 ```powershell
-# PC 端执行，映射 VNC 端口
+# Execute on the PC, map the VNC port
 hdc fport tcp:5900 tcp:5900
 ```
 
-VNC 客户端连接 `127.0.0.1:5900`，即可看到桌面（xfwm4 窗口管理器 + 终端 + Firefox 浏览器）。
+Connect to `127.0.0.1:5900` using a VNC client to view the desktop (xfwm4 window manager + terminal + Firefox browser).
 
-> **USB 连接说明：** 如果 PC 和 OpenHarmony 设备之间没有网络（仅通过 USB 连接），所有端口都需要通过 `hdc fport` 映射后才能访问。SSH 映射 `tcp:2222 tcp:22`，VNC 映射 `tcp:5900 tcp:5900`，其他服务同理。映射后统一通过 `127.0.0.1` + 对应端口访问。
-
-**SSH 连接报 HOST IDENTIFICATION HAS CHANGED：**
-
-换设备或重装后 host key 会变，删掉旧记录即可：
-
-```powershell
-ssh-keygen -R "[127.0.0.1]:2222"
-```
-
-**取消端口映射：**
-
-```powershell
-# 查看当前映射
-hdc fport ls
-
-# 取消指定映射
-hdc fport rm tcp:2222 tcp:22
-hdc fport rm tcp:5900 tcp:5900
-```
-
-## 手动安装
-
-如果不用一键部署脚本，也可以分步操作：
-
-```bash
-# 1. 推送并安装 Alpine
-hdc file send install.sh /data/local/tmp/install.sh
-hdc file send alpine-minirootfs-3.21.3-aarch64.tar.gz /data/local/tmp/alpine-minirootfs.tar.gz
-hdc shell "sh /data/local/tmp/install.sh"
-
-# 2. 进入 Alpine
-hdc shell
-sh /data/local/tmp/alpine-enter.sh
-
-# 3. 部署桌面环境（在 Alpine 内执行）
-# 把 setup-desktop.sh 推到设备后：
-sh /tmp/setup-desktop.sh
-```
-
-## 卸载
-
-> **不要直接 `rm -rf /data/alpine`**，挂载点没卸载会删到宿主系统的 `/dev` 和 `/sys`。
-
-```bash
-hdc file send uninstall.sh /data/local/tmp/uninstall.sh
-hdc shell "sh /data/local/tmp/uninstall.sh"
-```
-
-## 文档
-
-- [安装配置细节](OpenHarmony安装linux细节.md) — 代理上网、共享目录、网络修复、tmux 等详细说明
-- [hdc 开发记录](DevHistory.md) — hdc 终端窗口大小支持 + PC 端独立编译
-
-## 技术细节
-
-| 项目 | 说明 |
-|------|------|
-| 宿主系统 | OpenHarmony（Linux 6.6 内核） |
-| 客户系统 | Alpine Linux 3.21（aarch64） |
-| 隔离方式 | chroot（非虚拟机，非容器） |
-| 性能损耗 | 无 |
-| 安装位置 | `/data/alpine` |
-| SSH | dropbear（OpenSSH 在 chroot 下 privilege separation 失败） |
-| VNC | Xvfb + x11vnc + XFCE4 |
-| 浏览器 | Firefox |
-
-## 文件说明
-
-| 文件 | 用途 |
-|------|------|
-| `deploy.ps1` | Windows 一键部署脚本 |
-| `install.sh` | Alpine 基础安装 |
-| `setup-desktop.sh` | SSH + VNC + 桌面环境部署 |
-| `uninstall.sh` | 安全卸载 |
-| `build_standalone_linux_host.sh` | hdc PC 端独立编译（Linux） |
-| `build_standalone_mingw_host.sh` | hdc PC 端交叉编译（Windows） |
-
-## License
-
-MIT
+> **USB Connection Notes:** If there is no network connection between the PC and the OpenHarmony device (connected via USB only), all ports must be mapped using `hdc fport` before they can be accessed. Map SSH as `tcp:2222 tcp:22`, VNC as `tcp:5900 tcp:5900`, and other services similarly. After mapping,
